@@ -149,3 +149,8 @@ to `hook.log`. Keep a nightly `--changed-only` run for missed events.
 - [Artwork downloads and imports](docs/reference.md#download-more-posters-and-logos)
 - [Plex labels, clear logos and poster cleanup](docs/reference.md#clear-logos-in-plex)
 - [Asset folders, fallback rules and performance](docs/reference.md#editable-asset-folders)
+
+## License
+
+Overlayrr is released under [The Unlicense](LICENSE). Bundled third-party
+libraries, fonts and artwork remain subject to their respective terms.

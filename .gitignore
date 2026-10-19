@@ -5,6 +5,7 @@
 !/overlayrr-hook.sh
 !/requirements.txt
 !/README.md
+!/LICENSE
 !/docs/
 !/config.example.yaml
 !/.env.example
