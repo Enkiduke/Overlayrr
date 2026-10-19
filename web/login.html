@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Overlayrr</title><style>%STYLE%
+body{display:grid;place-items:center;min-height:100vh}
+form{display:grid;gap:12px;width:min(320px,90vw);padding:28px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+h1{margin:0;font-size:22px}.lead{margin:-6px 0 4px;color:var(--dim);font-size:14px}
+.err{color:var(--warn);margin:0;font-size:14px}.err:empty{display:none}
+</style><form method="post" action="/login"><h1>Overlayrr</h1><p class="lead">Sign in to choose posters and logos.</p>
+<input type="password" name="password" placeholder="Password" aria-label="Password" autocomplete="current-password" autofocus required>
+<button class="primary">Sign in</button><p class="err" role="alert">%MESSAGE%</p></form></html>

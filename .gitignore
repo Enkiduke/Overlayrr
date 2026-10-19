@@ -1,0 +1,14 @@
+# Only the published files; everything else here (keys, configs, logs, assets, caches) stays local.
+/*
+!/.gitignore
+!/overlayrr.py
+!/overlayrr-hook.sh
+!/requirements.txt
+!/README.md
+!/config.example.yaml
+!/.env.example
+!/web/
+!/resources/
+!/tests/
+__pycache__/
+*.pyc
