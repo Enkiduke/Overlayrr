@@ -3199,6 +3199,27 @@ COLLECTION_RECOMMENDATIONS = (
     ("Prime Video Top 10", "https://flixpatrol.com/top10/amazon-prime/world/", "Prime Video worldwide charts", "movie"))
 
 
+# Membership sources: github.com/Kometa-Team/Kometa/blob/master/defaults/both/universe.yml
+COLLECTION_UNIVERSES = (
+    ("avp", "Alien / Predator", "https://www.imdb.com/list/ls543971628/", ("movie",)),
+    ("arrow", "Arrowverse", "https://www.imdb.com/list/ls566667558/", ("movie", "tv")),
+    ("askew", "View Askewniverse", "https://mdblist.com/lists/k0meta/external/15362/", ("movie", "tv")),
+    ("conjuring", "Conjuring Universe", "https://www.imdb.com/list/ls068768438/", ("movie",)),
+    ("dca", "DC Animated Universe", "https://mdblist.com/lists/johnfawkes/dca/", ("movie", "tv")),
+    ("dceu", "DC Extended Universe", "https://mdblist.com/lists/fa11en82/dc-extended-universe/", ("movie", "tv")),
+    ("dcu", "DC Universe", "https://www.themoviedb.org/list/8642250/", ("movie", "tv")),
+    ("fast", "Fast & Furious", "https://www.imdb.com/list/ls4102351575/", ("movie",)),
+    ("marvel", "In Association With Marvel", "https://mdblist.com/lists/k0meta/external/15110/", ("movie", "tv")),
+    ("mcu", "Marvel Cinematic Universe", "https://www.imdb.com/list/ls539646485/", ("movie", "tv")),
+    ("middle", "Middle Earth", "https://mdblist.com/lists/k0meta/external/46550/", ("movie", "tv")),
+    ("rocky", "Rocky / Creed", "https://mdblist.com/lists/k0meta/external/9248/", ("movie",)),
+    ("trek", "Star Trek", "https://www.imdb.com/list/ls547463722/", ("movie", "tv")),
+    ("star", "Star Wars Universe", "https://www.imdb.com/list/ls501373412/", ("movie", "tv")),
+    ("mummy", "Mummy Universe", "https://mdblist.com/lists/k0meta/external/9249/", ("movie",)),
+    ("wizard", "Wizarding World", "https://mdblist.com/lists/k0meta/external/23683/", ("movie",)),
+    ("xmen", "X-Men Universe", "https://www.imdb.com/list/ls567618635/", ("movie", "tv")))
+
+
 def collection_source(url):
     """Canonical public list URL. Never forward user-supplied credentials, hosts or query strings."""
     if not isinstance(url, str):
@@ -3213,7 +3234,7 @@ def collection_source(url):
         "imdb": r"/(?:list/ls\d+|chart/(?:top|toptv|moviemeter|tvmeter))",
         "trakt": r"/(?:users/[\w-]+/lists/[\w-]+|lists/\d+|(?:movies|shows)/(?:trending|popular))",
         "letterboxd": r"/[\w-]+/list/[\w-]+",
-        "mdblist": r"/lists/(?:\d+|[\w-]+/[\w-]+)",
+        "mdblist": r"/lists/(?:\d+|[\w-]+/[\w-]+|[\w-]+/external/\d+)",
         "flixpatrol": r"/top10/[\w-]+/[\w-]+(?:/\d{4}-\d{2}-\d{2})?"}
     if provider is None or not re.fullmatch(patterns[provider], path):
         raise ValueError("Unsupported list URL. Use a TMDb list/collection/chart, IMDb list/chart, Trakt list/chart, Letterboxd list, MDBList list or FlixPatrol Top 10 URL")
@@ -3327,6 +3348,13 @@ class CollectionSources:
             rows.append({"name": "Popular MDBList collections", "url": None, "description": "Browse community lists ranked by likes (requires MDBLIST_API_KEY)", "type": "movie", "provider": "mdblist"})
         return rows
 
+    def universes(self, query="", kind="movie"):
+        if kind not in ("movie", "tv"):
+            raise ValueError("Choose movies or TV for universe collections")
+        return [{"key": key, "name": name, "url": url, "description": "Curated universe membership from " + COLLECTION_PROVIDERS[collection_source(url)[0]][0],
+                 "type": kind, "provider": collection_source(url)[0]}
+                for key, name, url, kinds in COLLECTION_UNIVERSES if kind in kinds and query.casefold() in name.casefold()]
+
     def discover(self, provider, query=""):
         rows = []
         if provider == "tmdb":
@@ -3417,18 +3445,19 @@ class CollectionSources:
             else:
                 raise ValueError("Too many source pages; choose a smaller collection limit")
         elif provider == "mdblist":
-            endpoint = path.replace("/lists/external/", "/lists/")
-            if re.fullmatch(r"/lists/\d+", endpoint):
+            external = re.fullmatch(r"/lists/[\w-]+/external/(\d+)", path)
+            endpoint = "/external/lists/" + external[1] if external else path
+            if external or re.fullmatch(r"/lists/\d+", endpoint):
                 metadata = self.api(provider, endpoint)
                 if isinstance(metadata, list):
                     metadata = metadata[0] if metadata else {}
                 name = metadata.get("name") or name
             for offset in range(0, 2500, 100):
-                result = self.api(provider, endpoint + "/items", limit=100, offset=offset)
-                batch = result.get("movies" if kind == "movie" else "shows", [])
+                result = self.api(provider, endpoint + "/items", limit=100, offset=offset, **({"unified": True} if external else {}))
+                batch = result if isinstance(result, list) else result.get("movies" if kind == "movie" else "shows", result.get("items", []))
                 for row in batch:
-                    add({**row, "tmdb_id": row.get("id")}, kind)
-                if len(rows) >= limit or not result.get("movies", []) and not result.get("shows", []):
+                    add({**row, "tmdb_id": row.get("id") or row.get("tmdbid")}, row.get("mediatype") or row.get("type") or kind)
+                if len(rows) >= limit or not result or isinstance(result, dict) and not any(result.get(key) for key in ("movies", "shows", "items")):
                     break
             else:
                 raise ValueError("Too many source pages; choose a smaller collection limit")
@@ -6404,8 +6433,17 @@ class WebApp:
         mode = data.get("mode", "recommendations")
         try:
             if mode == "preview":
-                return sources.fetch(data.get("url"), data.get("type", "movie"), data.get("limit"))
+                universe = data.get("universe")
+                preset = next((row for row in COLLECTION_UNIVERSES if row[0] == universe), None) if universe else None
+                if universe and (preset is None or data.get("type", "movie") not in preset[3]):
+                    raise ValueError("Unknown universe or unsupported media type")
+                result = sources.fetch(preset[2] if preset else data.get("url"), data.get("type", "movie"), data.get("limit"))
+                if preset:
+                    result["name"] = preset[1]
+                return result
             provider, query = data.get("provider", "all"), str(data.get("query") or "")[:200]
+            if mode == "universes":
+                return {"results": sources.universes(query, data.get("type", "movie"))}
             rows = sources.discover(provider, query) if mode == "browse" else sources.recommendations(provider, query)
             return {"results": rows}
         except RuntimeError:

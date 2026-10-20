@@ -116,6 +116,19 @@ Open <http://127.0.0.1:8787> to browse titles, choose posters and logos, crop
 backdrops, preview changes, edit layouts, and push results to Plex. Run a normal
 batch first to populate the library. With uploads off, the page renders locally.
 
+In **Collections > Discover > Universes**, choose from 17 presets including MCU,
+Star Wars, Wizarding World and Middle Earth. These use the curated source lists
+[listed by Kometa](https://github.com/Kometa-Team/Kometa/blob/master/defaults/both/universe.yml).
+Choose Movies or TV shows, preview up to 250 titles, then add the collection to
+its Plex library. The preset name is filled in; imports start disabled and use
+append-only membership. Enable it, choose synchronization if you want removals,
+save, and preview the plan before applying. Source refresh is on by default.
+Movie and TV collections are separate; some presets are movie-only.
+
+MDBList presets require `MDBLIST_API_KEY`; TMDb presets use `TMDB_API_KEY`.
+IMDb may block public list imports. You can also use **Import URL** for your own
+universe list. Presets supply membership; collection artwork is chosen separately.
+
 For access from other machines, add `--host 0.0.0.0`; use an HTTPS reverse proxy
 for remote access. See [server details](docs/reference.md#web-interface).
 

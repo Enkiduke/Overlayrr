@@ -319,6 +319,21 @@ layouts:
 # Episodes use Season 01/Episode 01/ (the still is saved there as poster.jpg and reused).
 # Episodes always use the show's logo too.
 # Keep just one poster and one logo per folder; remove the old extension if changing formats.
+# Universe collections: Collections -> Discover -> Universes in the web interface.
+# Or add a source-backed custom collection manually (use your exact Plex library name):
+# collections:
+#   - name: Marvel Cinematic Universe
+#     library: Movies
+#     type: movie              # Use tv in a separate definition for the TV library
+#     enabled: false           # Enable after reviewing the plan
+#     sync: append             # sync also removes members absent from the source
+#     source:
+#       url: https://www.imdb.com/list/ls539646485/
+#       limit: 250
+#       refresh: true          # Refresh the source on collection runs
+# Preview: python overlayrr.py config.yaml --custom-collections plan
+# MDBList universe presets require MDBLIST_API_KEY; IMDb can block public imports.
+
 # Optional metadata/layout overrides for items discovered in Plex:
 # overrides:
 #   "12345":

@@ -626,7 +626,7 @@ function push(ids) { run('/api/push', ids ? {ids} : {}); }
 let discoveryOpen = false, collectionTab = 'setup', collectionFilter = '', collectionSearch = '', collectionDate = '', collectionSaving = false;
 let collectionsData = null, collectionsDirty = false, collectionIndex = -1;
 const collectionDrafts = new WeakMap();
-const collectionDiscoverState = {mode: 'recommendations', provider: 'all', query: '', url: '', type: 'movie', limit: 50, results: null, preview: null};
+const collectionDiscoverState = {mode: 'recommendations', provider: 'all', query: '', url: '', type: 'movie', limit: 50, universe: null, results: null, preview: null};
 const collectionProviderNames = {tmdb: 'TMDb', imdb: 'IMDb', trakt: 'Trakt', letterboxd: 'Letterboxd', mdblist: 'MDBList', flixpatrol: 'FlixPatrol'};
 const COLLECTION_ADD = 'M12 5v14M5 12h14';
 const COLLECTION_SEARCH = 'M21 21l-5-5M19 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0';
@@ -679,11 +679,12 @@ function collectionDiscovery() {
     d.provider = provider.value; d.results = null; d.preview = null; preview.replaceChildren();
     helper.textContent = providerHelp(); if (d.mode === 'recommendations' || d.mode === 'browse' && !d.query) find();
   }}, h('option', {value: 'all', selected: d.provider === 'all'}, 'All providers'), Object.entries(collectionProviderNames).map(([key, name]) => h('option', {value: key, selected: d.provider === key}, name)));
-  const query = h('input', {type: 'search', value: d.query, placeholder: 'Search collections', 'aria-label': 'Search collections', oninput: e => d.query = e.target.value});
-  const url = h('input', {type: 'url', value: d.url, required: true, placeholder: 'https://…', 'aria-label': 'Public collection URL', oninput: e => { d.url = e.target.value; d.preview = null; preview.replaceChildren(); }});
-  const kind = h('select', {'aria-label': 'Media type', onchange: e => { d.type = e.target.value; d.preview = null; preview.replaceChildren(); }}, h('option', {value: 'movie', selected: d.type === 'movie'}, 'Movies'), h('option', {value: 'tv', selected: d.type === 'tv'}, 'TV shows'));
+  const query = h('input', {type: 'search', value: d.query, placeholder: d.mode === 'universes' ? 'Search universes' : 'Search collections', 'aria-label': 'Search collections', oninput: e => d.query = e.target.value});
+  const url = h('input', {type: 'url', value: d.url, required: true, placeholder: 'https://…', 'aria-label': 'Public collection URL', oninput: e => { d.url = e.target.value; d.universe = null; d.preview = null; preview.replaceChildren(); }});
+  const kind = h('select', {'aria-label': 'Media type', onchange: e => { d.type = e.target.value; d.preview = null; preview.replaceChildren(); if (d.mode === 'universes') find(); }}, h('option', {value: 'movie', selected: d.type === 'movie'}, 'Movies'), h('option', {value: 'tv', selected: d.type === 'tv'}, 'TV shows'));
   const limit = h('input', {type: 'number', value: d.limit, min: 1, max: 250, required: true, 'aria-label': 'Maximum imported titles', oninput: e => { d.limit = Number(e.target.value); d.preview = null; preview.replaceChildren(); }});
   function providerHelp() {
+    if (d.mode === 'universes') return 'Choose a universe and preview its titles. Movies and TV shows go into separate Plex collections. Membership follows the source list.';
     if (d.mode === 'recommendations') return 'A few good places to start. Choose a collection to see its titles before importing.';
     return {all: 'Choose a provider to search its public collections.', tmdb: 'Search movie franchises. Requires your TMDb API key.', trakt: 'Search public lists, or leave search blank for popular lists. Requires a Trakt client ID.', mdblist: 'Search public lists, or leave search blank for popular lists. Requires an MDBList API key.', letterboxd: 'Browse this week’s popular lists. Search filters these results.', imdb: 'Browse recommended IMDb charts. For a specific list, use Import URL.', flixpatrol: 'Browse recommended platform charts. For a specific country or date, use Import URL.'}[d.provider];
   }
@@ -706,14 +707,14 @@ function collectionDiscovery() {
       h('h3', {}, row.name), h('p', {class: 'dim'}, row.description || 'Public collection'),
       h('button', {onclick: () => {
         if (!row.url) { d.provider = row.provider; d.mode = 'browse'; d.query = ''; d.results = null; d.preview = null; drawCollections(); return; }
-        d.url = row.url; d.type = row.type; url.value = row.url; kind.value = row.type; fetchPreview();
+        d.url = row.url; d.type = row.type; d.universe = row.key || null; if (d.universe) d.limit = 250; url.value = row.url; kind.value = row.type; limit.value = d.limit; fetchPreview();
       }}, row.url ? 'Preview titles' : 'Browse lists'))));
     if (!response.results.length) results.append(h('div', {class: 'collection-empty'}, icon(COLLECTION_SEARCH, 28), h('h3', {}, 'No collections found'), h('p', {class: 'dim'}, 'Try another search, or import a list by URL.')));
   }
   function find() {
     if (d.mode === 'browse' && d.provider === 'all') { message('Choose a provider first.'); provider.focus(); return; }
     d.preview = null;
-    execute({mode: d.mode, provider: d.provider, query: d.query}, response => { d.results = response; showResults(response); });
+    execute({mode: d.mode, provider: d.provider, query: d.query, type: d.type}, response => { d.results = response; showResults(response); });
   }
   function showPreview(response) {
     results.hidden = true;
@@ -739,21 +740,21 @@ function collectionDiscovery() {
   }
   function fetchPreview() {
     d.preview = null; preview.replaceChildren();
-    execute({mode: 'preview', url: d.url, type: d.type, limit: d.limit}, response => { d.preview = response; showPreview(response); });
+    execute({mode: 'preview', url: d.url, type: d.type, limit: d.limit, universe: d.universe}, response => { d.preview = response; showPreview(response); });
   }
-  const modes = h('div', {class: 'collection-subnav', role: 'group', 'aria-label': 'Find collections'}, [['recommendations', 'Recommended'], ['browse', 'Search lists'], ['url', 'Import URL']].map(([mode, label]) => h('button', {class: d.mode === mode ? 'on' : '', 'aria-pressed': d.mode === mode, onclick: () => {
-    d.mode = mode; d.results = d.preview = null; d.query = ''; drawCollections();
+  const modes = h('div', {class: 'collection-subnav', role: 'group', 'aria-label': 'Find collections'}, [['recommendations', 'Recommended'], ['universes', 'Universes'], ['browse', 'Search lists'], ['url', 'Import URL']].map(([mode, label]) => h('button', {class: d.mode === mode ? 'on' : '', 'aria-pressed': d.mode === mode, onclick: () => {
+    d.mode = mode; d.results = d.preview = d.universe = null; d.query = ''; drawCollections();
   }}, label)));
-  const searchForm = h('form', {class: 'discovery-search', onsubmit: e => { e.preventDefault(); find(); }}, provider, h('div', {class: 'collection-searchbox'}, icon(COLLECTION_SEARCH), query), h('button', {type: 'submit'}, d.mode === 'browse' ? 'Search' : 'Find recommendations'));
-  const urlForm = h('form', {class: 'discovery-url-form', onsubmit: e => { e.preventDefault(); fetchPreview(); }},
-    collectionInput('Public list or collection URL', url), collectionInput('Media type', kind), collectionInput('Title limit', limit), h('button', {class: 'primary', type: 'submit'}, 'Preview titles'));
+  const searchForm = h('form', {class: 'discovery-search', onsubmit: e => { e.preventDefault(); find(); }}, d.mode === 'universes' ? kind : provider, h('div', {class: 'collection-searchbox'}, icon(COLLECTION_SEARCH), query), h('button', {type: 'submit'}, d.mode === 'browse' || d.mode === 'universes' ? 'Search' : 'Find recommendations'));
+  const urlForm = d.mode === 'url' ? h('form', {class: 'discovery-url-form', onsubmit: e => { e.preventDefault(); fetchPreview(); }},
+    collectionInput('Public list or collection URL', url), collectionInput('Media type', kind), collectionInput('Title limit', limit), h('button', {class: 'primary', type: 'submit'}, 'Preview titles')) : null;
   panel.append(h('div', {class: 'collection-section-heading'}, h('div', {}, h('h2', {}, 'Find your next collection'), h('p', {class: 'dim'}, 'Browse six sources or bring a list you already love.'))), modes,
     d.mode === 'url' ? urlForm : searchForm, d.mode === 'url' ? h('p', {class: 'collection-help'}, 'TMDb · IMDb · Trakt · Letterboxd · MDBList · FlixPatrol. Use a public HTTPS list URL.') : helper,
     status, preview, results,
     h('details', {class: 'collection-provider-help'}, h('summary', {}, 'Provider access & API keys'), h('p', {class: 'collection-help'}, 'TMDb needs TMDB_API_KEY, Trakt needs TRAKT_CLIENT_ID, and MDBList needs MDBLIST_API_KEY in your environment. Public IMDb, Letterboxd and FlixPatrol pages may block imports. Recommendations are editorial starting points.')));
   if (d.preview) showPreview(d.preview);
   else if (d.results) showResults(d.results);
-  else if (d.mode === 'recommendations' || d.mode === 'browse' && d.provider !== 'all') find();
+  else if (d.mode === 'recommendations' || d.mode === 'universes' || d.mode === 'browse' && d.provider !== 'all') find();
   return panel;
 }
 function drawCollections() {
