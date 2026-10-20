@@ -654,6 +654,12 @@ function syncCollectionActions() {
     status.textContent = collectionSaving ? 'Saving changes…' : state.running ? 'Job running · see Console' : collectionsDirty ? 'Unsaved changes' : 'All changes saved';
     status.className = 'collection-save-state ' + (collectionsDirty ? 'unsaved' : '');
   }
+  const enabledState = $('#collection-enabled-state'), entry = collectionsData.collections[collectionIndex];
+  if (enabledState && entry) {
+    enabledState.className = 'collection-callout' + (entry.enabled !== false ? ' enabled' : '');
+    enabledState.textContent = (entry.enabled === false ? 'Disabled: this collection will be skipped.' : `Enabled: Apply now matches existing ${entry.type === 'tv' ? 'shows' : 'movies'} in ${entry.library}.`) +
+      (collectionsDirty ? ' Unsaved changes: save before running.' : ' Settings saved.') + (entry.schedule ? ` Seasonal window: ${entry.schedule}.` : '');
+  }
   $('#views [data-view=collections]')?.classList.toggle('dirty', collectionsDirty);
 }
 function collectionDirty() { collectionsDirty = true; syncCollectionActions(); }
@@ -775,7 +781,7 @@ function drawCollections() {
     list.replaceChildren(...visible.map(({entry, index}) => {
       const provider = collectionProvider(entry);
       return h('button', {class: 'collection-list-item' + (index === collectionIndex && !discoveryOpen ? ' on' : ''), 'aria-current': index === collectionIndex && !discoveryOpen ? 'true' : null, onclick: () => { collectionIndex = index; discoveryOpen = false; collectionTab = 'setup'; drawCollections(); }},
-        h('span', {class: 'collection-list-title'}, h('b', {}, entry.name), h('span', {class: 'collection-status-dot' + (entry.enabled === false ? '' : ' enabled'), title: entry.enabled === false ? 'Disabled' : 'Enabled', 'aria-label': entry.enabled === false ? 'Disabled' : 'Enabled'})),
+        h('span', {class: 'collection-list-title'}, h('b', {}, entry.name), collectionBadge(entry.enabled === false ? 'Disabled' : 'Enabled', entry.enabled === false ? '' : 'enabled')),
         h('small', {class: 'dim'}, `${entry.library} · ${entry.type === 'tv' ? 'TV' : 'Movies'}`), h('span', {class: 'collection-list-tags'}, entry.schedule && collectionBadge('Seasonal'), provider && collectionBadge(collectionProviderNames[provider]), !entry.schedule && !provider && collectionBadge('Custom')));
     }));
     if (!visible.length) list.append(h('p', {class: 'collection-list-empty dim'}, entries.length ? 'No matching collections.' : 'Your collections will appear here.'));
@@ -803,12 +809,13 @@ function drawCollections() {
   if (entry) {
     const heading = h('h2', {id: 'collection-editor-name'}, entry.name);
     const provider = collectionProvider(entry);
-    const enabled = h('input', {type: 'checkbox', checked: entry.enabled !== false, onchange: e => { entry.enabled = e.target.checked; collectionDirty(); drawList(); enabledLabel.textContent = e.target.checked ? 'Enabled' : 'Disabled'; }});
+    const enabled = h('input', {type: 'checkbox', 'aria-label': 'Enable collection', checked: entry.enabled !== false, onchange: e => { entry.enabled = e.target.checked; collectionDirty(); drawCollections(); }});
     const enabledLabel = h('span', {}, entry.enabled !== false ? 'Enabled' : 'Disabled');
-    editor.append(h('div', {class: 'collection-editor-heading'}, h('div', {}, h('div', {class: 'collection-editor-badges'}, collectionBadge(entry.type === 'tv' ? 'TV shows' : 'Movies'), entry.schedule && collectionBadge('Seasonal'), provider && collectionBadge(collectionProviderNames[provider], provider)), heading), h('label', {class: 'collection-enabled'}, enabled, enabledLabel)),
+    editor.append(h('div', {class: 'collection-editor-heading'}, h('div', {}, h('div', {class: 'collection-editor-badges'}, collectionBadge(entry.type === 'tv' ? 'TV shows' : 'Movies'), entry.schedule && collectionBadge('Seasonal'), provider && collectionBadge(collectionProviderNames[provider], provider)), heading), h('label', {class: 'collection-enabled' + (entry.enabled !== false ? ' is-enabled' : '')}, enabled, enabledLabel)),
       h('div', {class: 'collection-subnav', role: 'group', 'aria-label': 'Collection settings'}, [['setup', 'Setup'], ['members', 'Members'], ['automation', 'Automation']].map(([tab, label]) => h('button', {class: collectionTab === tab ? 'on' : '', 'aria-pressed': collectionTab === tab, onclick: () => { collectionTab = tab; drawCollections(); }}, label))),
       h('div', {class: 'collection-editor-body', id: 'collection-editor-body'}));
     const body = editor.querySelector('.collection-editor-body');
+    body.append(h('p', {id: 'collection-enabled-state', role: 'status', class: 'collection-callout'}, ''));
     if (collectionTab === 'setup') {
       body.append(h('div', {class: 'collection-section-heading'}, h('h3', {}, 'The basics'), h('p', {class: 'dim'}, 'Give it a name and choose where it belongs.')),
         field('Collection name', entry.name, value => { entry.name = value; heading.textContent = value || 'Untitled collection'; drawList(); }, null, {id: 'collection-name'}),
@@ -816,7 +823,6 @@ function drawCollections() {
         field('Membership updates', entry.sync || 'append', value => entry.sync = value, [['append', 'Only add new members'], ['sync', 'Add and remove to match']], {}, 'Choose “Add and remove” to keep membership in sync with your picks or source.'),
         h('div', {class: 'collection-setup-summary'}, h('div', {}, h('b', {}, 'Members'), h('span', {class: 'dim'}, `${(entry.members || []).length} saved picks${entry.rules && Object.keys(entry.rules).length ? ' + Plex rules' : ''}`)), h('button', {onclick: () => { collectionTab = 'members'; drawCollections(); }}, 'Edit members →')),
         h('div', {class: 'collection-setup-summary'}, h('div', {}, h('b', {}, 'Automation'), h('span', {class: 'dim'}, entry.schedule ? `Seasonal · ${entry.schedule}` : 'All year', entry.acquire ? ' · Radarr acquisition on' : ' · Downloads off')), h('button', {onclick: () => { collectionTab = 'automation'; drawCollections(); }}, 'Configure →')),
-        entry.enabled === false && h('p', {class: 'collection-callout'}, 'This collection is disabled. Enable it when you’re ready, then save and preview the plan.'),
         h('details', {class: 'collection-more'}, h('summary', {}, 'More actions'), h('p', {class: 'collection-help'}, 'Remove this definition from Overlayrr. Its Plex collection and media will remain.'), h('button', {class: 'collection-danger', onclick: () => {
           const index = collectionIndex;
           entries.splice(index, 1); collectionIndex = entries.length ? Math.min(index, entries.length - 1) : -1; collectionDirty(); drawCollections();

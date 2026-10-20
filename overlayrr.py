@@ -3691,9 +3691,14 @@ def seasonal_radarr(artwork, definitions, items, apply, today):
             return response.json() if response.content else None
     # This durable journal is intentionally outside the expiring artwork cache.
     state_path = artwork.base / "overlayrr-collections.json"
-    state = json.loads(state_path.read_bytes()) if state_path.exists() else {"version": 1, "server": url, "tag": "overlayrr-" + secrets.token_hex(8), "movies": {}}
-    if not isinstance(state, dict) or state.get("version") != 1 or state.get("server") != url or not isinstance(state.get("movies"), dict) or not isinstance(state.get("tag"), str):
-        raise ValueError("Seasonal ownership journal is invalid or belongs to another Radarr server; cleanup refused")
+    try:
+        state = json.loads(state_path.read_bytes()) if state_path.exists() else {"version": 1, "server": url, "tag": "overlayrr-" + secrets.token_hex(8), "movies": {}}
+    except (OSError, ValueError):
+        raise ValueError("Cannot read overlayrr-collections.json; Radarr acquisition and cleanup refused. Restore the ownership journal from backup") from None
+    if not isinstance(state, dict) or state.get("version") != 1 or not isinstance(state.get("movies"), dict) or not isinstance(state.get("tag"), str):
+        raise ValueError("Invalid overlayrr-collections.json; Radarr acquisition and cleanup refused. Restore the ownership journal from backup")
+    if state.get("server") != url:
+        raise ValueError("Radarr URL differs from overlayrr-collections.json; Radarr acquisition and cleanup refused. Restore the previous radarr.url or the journal for this server")
     save = lambda: atomic_write(state_path, json.dumps(state, indent=2).encode())
     movies = request("GET", "movie")
     existing = {int(movie["tmdbId"]): movie for movie in movies}
@@ -3790,7 +3795,11 @@ def custom_collections(artwork, apply=False, today=None, added_item=None):
             result = sources.fetch(source["url"], entry["type"], source.get("limit"))
             entry["members"] = [row["member"] for row in result["items"]]
     enabled = [entry for entry in definitions if entry.get("enabled", True)]
+    for entry in definitions:
+        if not entry.get("enabled", True):
+            print(f"SKIP {entry['name']} [{entry['library']}]: disabled; enable it and save Collections to include it", flush=True)
     if not enabled:
+        print("No enabled custom collections. Nothing was changed.", flush=True)
         return 0
     plex = artwork.plex
     kinds = sorted({"show" if entry["type"] == "tv" else "movie" for entry in enabled})
@@ -3800,8 +3809,13 @@ def custom_collections(artwork, apply=False, today=None, added_item=None):
         if entry["library"] not in libraries["show" if entry["type"] == "tv" else "movie"]:
             raise ValueError(f"Collection library {entry['library']!r} must name a configured library of its type")
     items = plex.scan()
+    radarr_failed = 0
     if added_item is None:
-        seasonal_radarr(artwork, definitions, items, apply, today)
+        try:
+            seasonal_radarr(artwork, definitions, items, apply, today)
+        except (RuntimeError, ValueError, OSError) as error:
+            radarr_failed = 1
+            print(f"ERROR Radarr: {error}. Plex collection syncing will continue", file=sys.stderr, flush=True)
     builder = CollectionBuilder(plex, apply, kinds)
     for entry in enabled:
         name, library = entry["name"], entry["library"]
@@ -3815,6 +3829,7 @@ def custom_collections(artwork, apply=False, today=None, added_item=None):
                     keys = [key for key in keys if key == added_item.get("rating_key")]
                     if not keys:
                         continue
+                print(f"{'PLAN ' if not apply else ''}MATCH {name} [{library}]: {len(keys)} existing Plex {'shows' if entry['type'] == 'tv' else 'movies'}; enabled", flush=True)
                 if missing:
                     print(f"WARN {name} [{library}]: {len(missing)} missing or ambiguous members; no members removed", flush=True)
                 if not keys:
@@ -3845,7 +3860,7 @@ def custom_collections(artwork, apply=False, today=None, added_item=None):
         except (RuntimeError, ValueError, ET.ParseError) as error:
             builder.failed(name, library, error)
     builder.summary()
-    return builder.failures
+    return builder.failures + radarr_failed
 
 
 def wanted_collections(artwork, streaming, region):

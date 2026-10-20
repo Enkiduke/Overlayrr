@@ -124,6 +124,16 @@ its Plex library. The preset name is filled in; imports start disabled and use
 append-only membership. Enable it, choose synchronization if you want removals,
 save, and preview the plan before applying. Source refresh is on by default.
 Movie and TV collections are separate; some presets are movie-only.
+The sidebar and editor show **Enabled** or **Disabled**, and the editor shows
+whether changes are saved. Enable a collection, save, then use **Preview plan**
+to see how many existing Plex titles match. **Apply now** creates or updates it;
+missing downloads are optional. Disabled definitions are listed as skipped.
+
+A Radarr failure is reported separately: Plex collection syncing continues,
+but the run still reports an error. If `overlayrr-collections.json` belongs to a
+different Radarr URL, acquisition and cleanup are refused. Restore the previous
+`radarr.url` or the journal for that server; keep the journal to preserve cleanup
+ownership records. Invalid or unreadable journals also block Radarr work.
 
 MDBList presets require `MDBLIST_API_KEY`; TMDb presets use `TMDB_API_KEY`.
 IMDb may block public list imports. You can also use **Import URL** for your own

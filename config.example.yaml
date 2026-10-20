@@ -331,6 +331,9 @@ layouts:
 #       url: https://www.imdb.com/list/ls539646485/
 #       limit: 250
 #       refresh: true          # Refresh the source on collection runs
+# Enable the definition, save, then preview; the log reports matched existing Plex titles.
+# Radarr journal errors block acquisition/cleanup but do not block Plex collection syncing.
+# Preserve overlayrr-collections.json; its saved server must match radarr.url.
 # Preview: python overlayrr.py config.yaml --custom-collections plan
 # MDBList universe presets require MDBLIST_API_KEY; IMDb can block public imports.
 
