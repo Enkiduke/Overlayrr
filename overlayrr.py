@@ -6516,6 +6516,95 @@ class WebApp:
             self.start("Custom collections: " + mode, [(args, None)])
 
 
+    def activity(self):
+        """What Plex is playing right now (/status/sessions): movies, episodes, music and Live TV channels."""
+        server = Plex(HTTP(self.cache), read_config(self.config_path))
+        try:
+            server.require("Activity")
+            root = server.xml("/status/sessions")
+        except RuntimeError as error:
+            raise ValueError(f"Plex: {error}") from None
+        finally:
+            self.hang_up(server)
+        streams = [self.stream_view(item) for item in root if item.find("Player") is not None]
+        return {"streams": streams, "bandwidth": sum(s["bandwidth"] for s in streams),
+                "wan": sum(s["bandwidth"] for s in streams if s["location"] == "WAN")}
+
+    @staticmethod
+    def stream_view(item):
+        """One /status/sessions entry, as the Activity view shows it."""
+        def first(*paths):
+            for path in paths:
+                found = item.find(path)
+                if found is not None:
+                    return found
+            return ET.Element("none")
+
+        def number(value):
+            with contextlib.suppress(TypeError, ValueError):
+                return int(float(value))
+            return 0
+
+        def picture(path):
+            if path.startswith(("http://", "https://")):
+                return path
+            return "/api/plexpath?" + urlencode({"p": path}) if path.startswith("/library/metadata/") else None
+
+        user, player, session, transcode = first("User"), first("Player"), first("Session"), first("TranscodeSession")
+        media = first("Media[@selected='1']", "Media")
+        part = first("Media[@selected='1']/Part[@selected='1']", "Media/Part")
+        streams = {}
+        for stream in part.iter("Stream"):
+            kind = stream.get("streamType")
+            if kind not in streams or stream.get("selected") == "1":
+                streams[kind] = stream
+        video, audio, subtitle = (streams.get(kind) for kind in ("1", "2", "3"))
+        transcoding = item.find("TranscodeSession") is not None
+        decision = lambda kind: {"transcode": "Transcode", "copy": "Direct Stream"}.get(transcode.get(kind + "Decision"), "Direct Play" if not transcoding else "Direct Stream")
+        channels = lambda count: {"1": "Mono", "2": "Stereo", "6": "5.1", "8": "7.1"}.get(count, f"{count}ch" if count else "")
+        live, kind = item.get("live") == "1", item.get("type", "")
+        title, subtitle_line = item.get("title", ""), ""
+        if kind == "episode":
+            title, subtitle_line = item.get("grandparentTitle", ""), f"S{item.get('parentIndex', '?')} \u00b7 E{item.get('index', '?')} \u2014 {item.get('title', '')}"
+        elif kind == "track":
+            title, subtitle_line = f"{item.get('grandparentTitle', '')} \u2014 {item.get('title', '')}", item.get("parentTitle", "")
+        channel = " ".join(filter(None, (media.get("channelIdentifier") or item.get("channelIdentifier"),
+                                         media.get("channelTitle") or media.get("channelCallSign") or item.get("sourceTitle"))))
+        if live:
+            subtitle_line = " \u00b7 ".join(filter(None, (channel, subtitle_line)))
+        thumb = (item.get("grandparentThumb") if kind == "episode" and not live else item.get("parentThumb") if kind == "track" else None) \
+            or item.get("thumb") or media.get("channelThumb") or ""
+        overall = "Transcode" if "transcode" in (transcode.get("videoDecision"), transcode.get("audioDecision")) \
+            or (subtitle is not None and subtitle.get("decision") == "burn") else "Direct Stream" if transcoding else "Direct Play"
+        resolution = media.get("videoResolution", "")
+        resolution = resolution + "p" if resolution.isdigit() else resolution.upper()
+        video_line = audio_line = None
+        if video is not None:
+            video_line = f"{decision('video')} ({(video.get('codec') or media.get('videoCodec', '')).upper()} {resolution}".rstrip()
+            if transcode.get("videoDecision") == "transcode":
+                video_line += f" \u2192 {transcode.get('videoCodec', '').upper()} {transcode.get('height', '')}p"
+            video_line += ")"
+        if audio is not None:
+            audio_line = f"{decision('audio')} ({audio.get('displayTitle') or audio.get('codec', '').upper()}"
+            if transcode.get("audioDecision") == "transcode":
+                audio_line += f" \u2192 {transcode.get('audioCodec', '').upper()} {channels(transcode.get('audioChannels'))}".rstrip()
+            audio_line += ")"
+        source = (part.get("container") or media.get("container") or "").upper()
+        output = transcode.get("container", "").upper()
+        container = f"Converting ({source} \u2192 {output})" if transcoding and output and output != source else f"{overall} ({source})" if source else overall
+        location = session.get("location", "").upper()
+        return {
+            "id": session.get("id") or item.get("sessionKey", ""), "live": live, "kind": kind, "title": title, "subtitle": subtitle_line,
+            "year": item.get("year", ""), "library": item.get("librarySectionTitle", ""), "thumb": picture(thumb),
+            "user": user.get("title", ""), "avatar": picture(user.get("thumb", "")), "state": player.get("state", ""),
+            "product": player.get("product", ""), "player": player.get("title") or player.get("platform", ""),
+            "decision": overall, "speed": transcode.get("speed", ""), "throttled": transcode.get("throttled") == "1",
+            "bitrate": number(media.get("bitrate")), "container": container, "video": video_line, "audio": audio_line,
+            "subtitles": f"{subtitle.get('displayTitle', '')} ({'Burn' if subtitle.get('decision') == 'burn' else 'Direct'})" if subtitle is not None else "None",
+            "location": location, "address": player.get("address", ""), "secure": player.get("secure") == "1",
+            "bandwidth": number(session.get("bandwidth")), "offset": number(item.get("viewOffset")), "duration": number(item.get("duration")),
+        }
+
     def state(self):
         try:
             upload = bool(read_config(self.config_path).get("plex", {}).get("upload"))
@@ -6636,6 +6725,8 @@ class WebHandler(BaseHTTPRequestHandler):
                 self.reply(200, app.collection_settings())
             elif url.path == "/api/state":
                 self.reply(200, app.state())
+            elif url.path == "/api/activity":
+                self.reply(200, app.activity())
             elif url.path == "/api/template":
                 self.reply(200, app.template())
             elif url.path == "/api/job":

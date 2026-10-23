@@ -963,13 +963,54 @@ function drawEvents() {
   syncEventsActions();
 }
 
+// Activity: what Plex is playing right now, refreshed every few seconds while the view is open
+let activityTimer = null, activityRun = 0;
+const mbps = kbps => (kbps / 1000).toFixed(1) + ' Mbps';
+const clock = ms => { const s = Math.floor(ms / 1000), m = Math.floor(s / 60) % 60, two = n => String(n).padStart(2, '0'); return (s >= 3600 ? Math.floor(s / 3600) + ':' + two(m) : m) + ':' + two(s % 60); };
+async function loadActivity() {
+  const run = ++activityRun;
+  clearTimeout(activityTimer);
+  if (document.body.dataset.view !== 'activity') return;
+  try { const data = await api('/api/activity'); if (run === activityRun) drawActivity(data); }
+  catch (e) { if (run === activityRun) drawActivity(null, e.message); }
+  if (run === activityRun && document.body.dataset.view === 'activity') activityTimer = setTimeout(loadActivity, document.hidden ? 30000 : 5000);
+}
+function streamCard(s) {
+  const row = (name, value) => value && h('div', {}, h('dt', {}, name), h('dd', {}, value));
+  const progress = s.duration ? Math.min(100, s.offset / s.duration * 100) : 0;
+  const where = [s.location, s.address].filter(Boolean).join(': ');
+  return h('article', {class: 'stream-card'},
+    h('div', {class: 'stream-body'},
+      h('div', {class: 'stream-poster'}, s.thumb ? h('img', {src: s.thumb, alt: '', loading: 'lazy'}) : h('span', {}, s.live ? 'TV' : ''), s.live && h('b', {class: 'stream-live'}, 'LIVE')),
+      h('dl', {}, row('Product', s.product), row('Player', s.player),
+        row('Quality', (s.decision === 'Transcode' ? 'Converted' : 'Original') + (s.bitrate ? ` (${mbps(s.bitrate)})` : '')),
+        row('Stream', s.decision + (s.speed ? ` (Speed: ${s.speed}${s.throttled ? ', throttled' : ''})` : '')),
+        row('Container', s.container), row('Video', s.video), row('Audio', s.audio), row('Subtitle', s.subtitles),
+        row('Location', where && where + (s.secure ? ' (secure)' : '')), row('Bandwidth', s.bandwidth && mbps(s.bandwidth)))),
+    h('div', {class: 'stream-progress', role: 'progressbar', 'aria-label': 'Progress', 'aria-valuenow': Math.round(progress), 'aria-valuemin': 0, 'aria-valuemax': 100}, h('i', {style: `width:${progress}%`})),
+    h('div', {class: 'stream-foot'},
+      h('div', {class: 'stream-title'}, h('b', {}, (s.state === 'paused' ? '❚❚ ' : s.state === 'buffering' ? '… ' : '▶ ') + s.title),
+        h('small', {class: 'dim'}, [s.subtitle || s.year, s.library].filter(Boolean).join(' · '))),
+      h('div', {class: 'stream-user'}, h('span', {}, s.user), s.avatar && h('img', {src: s.avatar, alt: ''})),
+      h('small', {class: 'dim stream-time'}, s.duration ? `${clock(s.offset)} / ${clock(s.duration)}` : s.live ? 'Live' : '')));
+}
+function drawActivity(data, error) {
+  const n = data ? data.streams.length : 0, tc = data ? data.streams.filter(s => s.decision === 'Transcode').length : 0;
+  const summary = !data ? '' : n ? `${n} stream${n === 1 ? '' : 's'} (${tc} transcode${tc === 1 ? '' : 's'}) · Bandwidth ${mbps(data.bandwidth)} (WAN ${mbps(data.wan)})` : 'Nothing is playing right now.';
+  $('#activity').replaceChildren(h('div', {class: 'collections-heading'}, h('div', {}, h('p', {class: 'activity-eyebrow'}, 'YOUR SERVER, RIGHT NOW'), h('h1', {}, 'Activity'),
+    h('p', {class: 'dim', role: 'status'}, summary || 'Loading…')), h('button', {onclick: loadActivity}, 'Refresh')),
+    error && h('p', {class: 'event-notice', role: 'alert'}, 'Could not load activity: ' + error),
+    n > 0 && h('div', {class: 'stream-grid'}, data.streams.map(streamCard)));
+}
+
 function setView(name) {
   document.body.dataset.view = name;
-  $('#browse').hidden = name !== 'titles'; $('#tpl').hidden = name !== 'template'; $('#collections').hidden = name !== 'collections'; $('#events').hidden = name !== 'events';
+  $('#browse').hidden = name !== 'titles'; $('#tpl').hidden = name !== 'template'; $('#collections').hidden = name !== 'collections'; $('#events').hidden = name !== 'events'; $('#activity').hidden = name !== 'activity';
   document.querySelectorAll('#views button').forEach(b => { b.classList.toggle('on', b.dataset.view === name); b.setAttribute('aria-selected', String(b.dataset.view === name)); });
   history.replaceState(null, '', name !== 'titles' ? '#' + name : location.pathname + location.search);
   if (name === 'collections') { if (collectionsData) drawCollections(); else loadCollections(); }
   if (name === 'events') { if (eventsData && eventsDirty) drawEvents(); else loadEvents(); }
+  if (name === 'activity') { if (!$('#activity').firstChild) drawActivity(null); loadActivity(); }
   if (name !== 'template') return;
   if (tpl) tplPreview(); else tplLoad();
 }
@@ -1010,5 +1051,5 @@ document.onkeydown = e => {
   }
 };
 const ready = refresh();
-setView(['#template', '#collections', '#events'].includes(location.hash) ? location.hash.slice(1) : 'titles');
+setView(['#template', '#collections', '#events', '#activity'].includes(location.hash) ? location.hash.slice(1) : 'titles');
 ready.then(tick).then(j => { if (j.running) poll(); }).catch(fail);

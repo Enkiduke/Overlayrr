@@ -139,6 +139,11 @@ MDBList presets require `MDBLIST_API_KEY`; TMDb presets use `TMDB_API_KEY`.
 IMDb may block public list imports. You can also use **Import URL** for your own
 universe list. Presets supply membership; collection artwork is chosen separately.
 
+**Activity** lists what Plex is streaming right now, like Tautulli's activity
+panel: movies, episodes, music and Live TV/DVR channels (including custom
+channels from tuners such as ErsatzTV), with player, transcode decisions,
+bandwidth and progress. It reads `/status/sessions` every 5 seconds while open.
+
 For access from other machines, add `--host 0.0.0.0`; use an HTTPS reverse proxy
 for remote access. See [server details](docs/reference.md#web-interface).
 
